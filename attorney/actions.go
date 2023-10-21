@@ -5,6 +5,7 @@ package attorney
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/freehandle/breeze/crypto"
 	"github.com/freehandle/breeze/protocol/actions"
@@ -61,16 +62,13 @@ const (
 )
 
 func Kind(data []byte) byte {
-	if len(data) < 12 {
+	if len(data) < 14 {
 		return Invalid
 	}
-	if data[0] != 0 || data[1] != actions.IVoid || data[10]&1 != 1 {
+	if data[0] != 0 || data[1] != actions.IVoid || data[10] != 1 {
 		return Invalid
 	}
-	if data[11] >= Invalid {
-		return Invalid
-	}
-	return data[11]
+	return data[14]
 }
 
 type JoinNetwork struct {
@@ -104,41 +102,64 @@ func (j *JoinNetwork) Kind() byte {
 	return JoinNetworkType
 }
 
-func (j *JoinNetwork) Serialize() []byte {
+func (j *JoinNetwork) serializeToSign() []byte {
 	bytes := []byte{0, actions.IVoid} // breeze (version 0) void action
 	util.PutUint64(j.Epoch, &bytes)
-	util.PutByteArray([]byte{1, 0, 0, 0}, &bytes) // axé (version 0) protocol
+	util.PutByte(1, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
 	util.PutByte(JoinNetworkType, &bytes)
 	util.PutToken(j.Author, &bytes)
 	util.PutString(j.Handle, &bytes)
 	util.PutString(j.Details, &bytes)
+	return bytes
+}
+
+func (j *JoinNetwork) Serialize() []byte {
+	bytes := j.serializeToSign()
 	util.PutSignature(j.Signature, &bytes)
 	return bytes
 }
 
+func (j *JoinNetwork) Sign(key crypto.PrivateKey) {
+	bytes := j.serializeToSign()
+	j.Signature = key.Sign(bytes)
+}
+
 func ParseJoinNetwork(data []byte) *JoinNetwork {
-	if data[0] != 0 || data[1] != 0 {
+	if data[0] != 0 || data[1] != actions.IVoid || len(data) < 14 {
+		fmt.Println(3)
 		return nil
 	}
 	join := JoinNetwork{}
-	position := 1
+	position := 2
 	join.Epoch, position = util.ParseUint64(data, position)
-	if len(data) <= position+1 || data[position] != 0 || data[position+1] != JoinNetworkType {
+	// check if it is pure axe protocol
+	if data[position] != 1 || data[position+1] != 0 || data[position+2] != 0 || data[position+3] != 0 {
+		fmt.Println(1)
 		return nil
 	}
-	position += 2
+	if data[position+4] != JoinNetworkType {
+		fmt.Println(2)
+		return nil
+	}
+	position = position + 5
 	join.Author, position = util.ParseToken(data, position)
 	join.Handle, position = util.ParseString(data, position)
 	join.Details, position = util.ParseString(data, position)
-	if !json.Valid([]byte(join.Details)) {
+	if len(join.Details) > 0 && !json.Valid([]byte(join.Details)) {
+		fmt.Println(4)
 		return nil
 	}
 	hashPosition := position
 	join.Signature, position = util.ParseSignature(data, position)
 	if position != len(data) {
+		fmt.Println(5)
 		return nil
 	}
 	if !join.Author.Verify(data[0:hashPosition], join.Signature) {
+		fmt.Println(6)
 		return nil
 	}
 	return &join
@@ -178,27 +199,45 @@ func (u *UpdateInfo) Kind() byte {
 }
 
 func (u *UpdateInfo) Serialize() []byte {
-	bytes := []byte{0, 0}
-	util.PutUint64(u.Epoch, &bytes)
-	util.PutByte(UpdateInfoType, &bytes)
-	util.PutToken(u.Author, &bytes)
-	util.PutString(u.Details, &bytes)
-	util.PutToken(u.Signer, &bytes)
+	bytes := u.serializeToSign()
 	util.PutSignature(u.Signature, &bytes)
 	return bytes
 }
 
+func (u *UpdateInfo) serializeToSign() []byte {
+	bytes := []byte{0, actions.IVoid}
+	util.PutUint64(u.Epoch, &bytes)
+	util.PutByte(1, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(UpdateInfoType, &bytes)
+	util.PutToken(u.Author, &bytes)
+	util.PutString(u.Details, &bytes)
+	util.PutToken(u.Signer, &bytes)
+	return bytes
+}
+
+func (u *UpdateInfo) Sign(pk crypto.PrivateKey) {
+	bytes := u.serializeToSign()
+	u.Signature = pk.Sign(bytes)
+}
+
 func ParseUpdateInfo(data []byte) *UpdateInfo {
-	if data[0] != 0 || data[1] != 0 {
+	if data[0] != 0 || data[1] != actions.IVoid || len(data) < 14 {
 		return nil
 	}
 	update := UpdateInfo{}
-	position := 1
+	position := 2
 	update.Epoch, position = util.ParseUint64(data, position)
-	if len(data) <= position+1 || data[position] != 0 || data[position+1] != UpdateInfoType {
+	// check if it is pure axe protocol
+	if data[position] != 1 || data[position+1] != 0 || data[position+2] != 0 || data[position+3] != 0 {
 		return nil
 	}
-	position += 2
+	if data[position+4] != UpdateInfoType {
+		return nil
+	}
+	position = position + 5
 	update.Author, position = util.ParseToken(data, position)
 	update.Details, position = util.ParseString(data, position)
 	if !json.Valid([]byte(update.Details)) {
@@ -217,10 +256,11 @@ func ParseUpdateInfo(data []byte) *UpdateInfo {
 }
 
 type GrantPowerOfAttorney struct {
-	Epoch     uint64
-	Author    crypto.Token
-	Attorney  crypto.Token
-	Signature crypto.Signature
+	Epoch       uint64
+	Author      crypto.Token
+	Attorney    crypto.Token
+	Fingerprint []byte
+	Signature   crypto.Signature
 }
 
 func (g *GrantPowerOfAttorney) Tokens() []crypto.Token {
@@ -243,28 +283,49 @@ func (g *GrantPowerOfAttorney) Kind() byte {
 }
 
 func (g *GrantPowerOfAttorney) Serialize() []byte {
-	bytes := []byte{0, 0}
-	util.PutUint64(g.Epoch, &bytes)
-	util.PutByte(GrantPowerOfAttorneyType, &bytes)
-	util.PutToken(g.Author, &bytes)
-	util.PutToken(g.Attorney, &bytes)
+	bytes := g.serializeToSign()
 	util.PutSignature(g.Signature, &bytes)
 	return bytes
 }
 
+func (g *GrantPowerOfAttorney) serializeToSign() []byte {
+	bytes := []byte{0, actions.IVoid}
+	util.PutUint64(g.Epoch, &bytes)
+	util.PutByte(1, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(GrantPowerOfAttorneyType, &bytes)
+	util.PutToken(g.Author, &bytes)
+	util.PutByteArray(g.Fingerprint, &bytes)
+	util.PutToken(g.Attorney, &bytes)
+	return bytes
+}
+
+func (g *GrantPowerOfAttorney) Sign(pk crypto.PrivateKey) {
+	bytes := g.serializeToSign()
+	g.Signature = pk.Sign(bytes)
+}
+
 func ParseGrantPowerOfAttorney(data []byte) *GrantPowerOfAttorney {
-	if data[0] != 0 || data[1] != 0 {
+	if data[0] != 0 || data[1] != actions.IVoid || len(data) < 14 {
 		return nil
 	}
 	grant := GrantPowerOfAttorney{}
-	position := 1
+	position := 2
 	grant.Epoch, position = util.ParseUint64(data, position)
-	if len(data) <= position+1 || data[position] != 0 || data[position+1] != GrantPowerOfAttorneyType {
+	// check if it is pure axe protocol
+	if data[position] != 1 || data[position+1] != 0 || data[position+2] != 0 || data[position+3] != 0 {
 		return nil
 	}
-	position += 2
+	if data[position+4] != GrantPowerOfAttorneyType {
+		return nil
+	}
+	position = position + 5
+	grant.Author, position = util.ParseToken(data, position)
 	grant.Author, position = util.ParseToken(data, position)
 	grant.Attorney, position = util.ParseToken(data, position)
+	grant.Fingerprint, position = util.ParseByteArray(data, position)
 	hashPosition := position
 	grant.Signature, position = util.ParseSignature(data, position)
 	if position != len(data) {
@@ -302,27 +363,45 @@ func (r *RevokePowerOfAttorney) Kind() byte {
 	return RevokePowerOfAttorneyType
 }
 
-func (r *RevokePowerOfAttorney) Serialize() []byte {
-	bytes := []byte{0, 0}
+func (r *RevokePowerOfAttorney) serializeToSign() []byte {
+	bytes := []byte{0, actions.IVoid}
 	util.PutUint64(r.Epoch, &bytes)
+	util.PutByte(1, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
+	util.PutByte(0, &bytes)
 	util.PutByte(RevokePowerOfAttorneyType, &bytes)
 	util.PutToken(r.Author, &bytes)
 	util.PutToken(r.Attorney, &bytes)
+	return bytes
+}
+
+func (r *RevokePowerOfAttorney) Serialize() []byte {
+	bytes := r.serializeToSign()
 	util.PutSignature(r.Signature, &bytes)
 	return bytes
 }
 
+func (r *RevokePowerOfAttorney) Sign(pk crypto.PrivateKey) {
+	bytes := r.serializeToSign()
+	r.Signature = pk.Sign(bytes)
+}
+
 func ParseRevokePowerOfAttorney(data []byte) *RevokePowerOfAttorney {
-	if data[0] != 0 || data[1] != 0 {
+	if data[0] != 0 || data[1] != actions.IVoid || len(data) < 14 {
 		return nil
 	}
 	revoke := RevokePowerOfAttorney{}
-	position := 1
+	position := 2
 	revoke.Epoch, position = util.ParseUint64(data, position)
-	if len(data) <= position+1 || data[position] != 0 || data[position+1] != RevokePowerOfAttorneyType {
+	// check if it is pure axe protocol
+	if data[position] != 1 || data[position+1] != 0 || data[position+2] != 0 || data[position+3] != 0 {
 		return nil
 	}
-	position += 2
+	if data[position+4] != GrantPowerOfAttorneyType {
+		return nil
+	}
+	position = position + 5
 	revoke.Author, position = util.ParseToken(data, position)
 	revoke.Attorney, position = util.ParseToken(data, position)
 	hashPosition := position
@@ -338,6 +417,7 @@ func ParseRevokePowerOfAttorney(data []byte) *RevokePowerOfAttorney {
 
 type Void struct {
 	Epoch     uint64
+	Protocol  uint32
 	Author    crypto.Token
 	Data      []byte
 	Signer    crypto.Token
@@ -372,27 +452,40 @@ func (v *Void) Kind() byte {
 	return VoidType
 }
 
-func (v *Void) Serialize() []byte {
-	bytes := []byte{0, 0}
+func (v *Void) serializeToSign() []byte {
+	bytes := []byte{0, actions.IVoid}
 	util.PutUint64(v.Epoch, &bytes)
+	util.PutUint32(v.Protocol, &bytes)
 	util.PutByte(VoidType, &bytes)
+	util.PutToken(v.Author, &bytes)
 	util.PutByteArray(v.Data, &bytes)
 	util.PutToken(v.Signer, &bytes)
+	return bytes
+}
+
+func (v *Void) Serialize() []byte {
+	bytes := v.serializeToSign()
 	util.PutSignature(v.Signature, &bytes)
 	return bytes
 }
 
+func (v *Void) Sign(pk crypto.PrivateKey) {
+	bytes := v.serializeToSign()
+	v.Signature = pk.Sign(bytes)
+}
+
 func ParseVoid(data []byte) *Void {
-	if data[0] != 0 || data[1] != 0 {
+	if data[0] != 0 || data[1] != actions.IVoid || len(data) < 14 {
 		return nil
 	}
 	void := Void{}
-	position := 1
+	position := 2
 	void.Epoch, position = util.ParseUint64(data, position)
-	if len(data) <= position+1 || data[position] != 0 || data[position+1] != VoidType {
+	void.Protocol, position = util.ParseUint32(data, position)
+	if data[position] != VoidType {
 		return nil
 	}
-	position += 2
+	position = position + 1
 	void.Author, position = util.ParseToken(data, position)
 	void.Data, position = util.ParseByteArray(data, position)
 	void.Signer, position = util.ParseToken(data, position)
