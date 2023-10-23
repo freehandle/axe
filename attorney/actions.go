@@ -323,9 +323,8 @@ func ParseGrantPowerOfAttorney(data []byte) *GrantPowerOfAttorney {
 	}
 	position = position + 5
 	grant.Author, position = util.ParseToken(data, position)
-	grant.Author, position = util.ParseToken(data, position)
-	grant.Attorney, position = util.ParseToken(data, position)
 	grant.Fingerprint, position = util.ParseByteArray(data, position)
+	grant.Attorney, position = util.ParseToken(data, position)
 	hashPosition := position
 	grant.Signature, position = util.ParseSignature(data, position)
 	if position != len(data) {
@@ -398,7 +397,7 @@ func ParseRevokePowerOfAttorney(data []byte) *RevokePowerOfAttorney {
 	if data[position] != 1 || data[position+1] != 0 || data[position+2] != 0 || data[position+3] != 0 {
 		return nil
 	}
-	if data[position+4] != GrantPowerOfAttorneyType {
+	if data[position+4] != RevokePowerOfAttorneyType {
 		return nil
 	}
 	position = position + 5
