@@ -12,6 +12,8 @@ import (
 	"github.com/freehandle/breeze/util"
 )
 
+const voidTailSize = 2*crypto.TokenSize + 2*crypto.SignatureSize + 8
+
 var AxeProtocolCode = [4]byte{1, 0, 0, 0}
 
 type ActionValidator interface {
@@ -452,7 +454,7 @@ func (v *Void) serializeToSign() []byte {
 	util.PutUint32(v.Protocol, &bytes)
 	util.PutByte(VoidType, &bytes)
 	util.PutToken(v.Author, &bytes)
-	util.PutByteArray(v.Data, &bytes)
+	bytes = append(bytes, v.Data...)
 	util.PutToken(v.Signer, &bytes)
 	return bytes
 }
@@ -481,7 +483,11 @@ func ParseVoid(data []byte) *Void {
 	}
 	position = position + 1
 	void.Author, position = util.ParseToken(data, position)
-	void.Data, position = util.ParseByteArray(data, position)
+	if len(data)-voidTailSize < position {
+		return nil
+	}
+	void.Data = data[position : len(data)-voidTailSize]
+	position = len(data) - voidTailSize
 	void.Signer, position = util.ParseToken(data, position)
 	hashPosition := position
 	void.Signature, position = util.ParseSignature(data, position)
