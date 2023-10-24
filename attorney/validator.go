@@ -1,6 +1,8 @@
 package attorney
 
 import (
+	"fmt"
+
 	"github.com/freehandle/breeze/crypto"
 )
 
@@ -65,34 +67,60 @@ func (v *MutatingState) Validate(data []byte) bool {
 	if kind == Invalid {
 		return false
 	}
+	var ok bool
 	switch kind {
 	case JoinNetworkType:
 		join := ParseJoinNetwork(data)
-		return v.SetNewMember(join.Author, join.Handle)
+		if join != nil {
+			ok = v.SetNewMember(join.Author, join.Handle)
+			fmt.Printf("axe node %v:%+v\n", ok, *join)
+		} else {
+			fmt.Printf("axe node: could not parse join\n %v\n", data)
+		}
 	case UpdateInfoType:
 		update := ParseUpdateInfo(data)
-		if !v.PowerOfAttorney(update.Author, update.Signer) {
-			return false
+		if update != nil {
+			ok = v.PowerOfAttorney(update.Author, update.Signer)
+			if ok {
+				ok = v.HasMember(update.Author)
+			}
+			fmt.Printf("axe node %v:%+v\n", ok, *update)
+		} else {
+			fmt.Printf("axe node %v: could not parse update\n", ok)
 		}
-		return v.HasMember(update.Author)
 	case GrantPowerOfAttorneyType:
 		grant := ParseGrantPowerOfAttorney(data)
-		if !v.HasMember(grant.Author) {
-			return false
+		if grant != nil {
+			ok = v.HasMember(grant.Author)
+			if ok {
+				ok = v.SetNewGrantPower(grant.Author, grant.Attorney)
+			}
+			fmt.Printf("axe node %v:%+v\n", ok, *grant)
+		} else {
+			fmt.Printf("axe node %v: could not parse grant\n", ok)
 		}
-		return v.SetNewGrantPower(grant.Author, grant.Attorney)
 	case RevokePowerOfAttorneyType:
 		revoke := ParseRevokePowerOfAttorney(data)
-		if !v.HasMember(revoke.Author) {
-			return false
+		if revoke != nil {
+			ok = v.HasMember(revoke.Author)
+			if ok {
+				ok = v.SetNewRevokePower(revoke.Author, revoke.Attorney)
+			}
+			fmt.Printf("axe node revoke %v:%+v\n", ok, *revoke)
+		} else {
+			fmt.Printf("axe node %v: could not parse revoke\n", ok)
 		}
-		return v.SetNewRevokePower(revoke.Author, revoke.Attorney)
 	case VoidType:
 		void := ParseVoid(data)
-		if !v.HasMember(void.Author) {
-			return false
+		if void != nil {
+			ok = v.HasMember(void.Author)
+			if ok {
+				ok = v.PowerOfAttorney(void.Author, void.Signer)
+			}
+			fmt.Printf("axe node void %v:%+v\n", ok, *void)
+		} else {
+			fmt.Printf("axe node %v: could not parse void\n", ok)
 		}
-		return v.PowerOfAttorney(void.Author, void.Signer)
 	}
-	return false
+	return ok
 }

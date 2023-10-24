@@ -137,11 +137,9 @@ func ParseJoinNetwork(data []byte) *JoinNetwork {
 	join.Epoch, position = util.ParseUint64(data, position)
 	// check if it is pure axe protocol
 	if data[position] != 1 || data[position+1] != 0 || data[position+2] != 0 || data[position+3] != 0 {
-		fmt.Println(1)
 		return nil
 	}
 	if data[position+4] != JoinNetworkType {
-		fmt.Println(2)
 		return nil
 	}
 	position = position + 5
@@ -149,17 +147,14 @@ func ParseJoinNetwork(data []byte) *JoinNetwork {
 	join.Handle, position = util.ParseString(data, position)
 	join.Details, position = util.ParseString(data, position)
 	if len(join.Details) > 0 && !json.Valid([]byte(join.Details)) {
-		fmt.Println(4)
 		return nil
 	}
 	hashPosition := position
 	join.Signature, position = util.ParseSignature(data, position)
-	if position != len(data) {
-		fmt.Println(5)
+	if position > len(data) {
 		return nil
 	}
 	if !join.Author.Verify(data[0:hashPosition], join.Signature) {
-		fmt.Println(6)
 		return nil
 	}
 	return &join
@@ -246,7 +241,7 @@ func ParseUpdateInfo(data []byte) *UpdateInfo {
 	update.Signer, position = util.ParseToken(data, position)
 	hashPosition := position
 	update.Signature, position = util.ParseSignature(data, position)
-	if position != len(data) {
+	if position > len(data) {
 		return nil
 	}
 	if !update.Author.Verify(data[0:hashPosition], update.Signature) {
@@ -327,7 +322,7 @@ func ParseGrantPowerOfAttorney(data []byte) *GrantPowerOfAttorney {
 	grant.Attorney, position = util.ParseToken(data, position)
 	hashPosition := position
 	grant.Signature, position = util.ParseSignature(data, position)
-	if position != len(data) {
+	if position > len(data) {
 		return nil
 	}
 	if !grant.Author.Verify(data[0:hashPosition], grant.Signature) {
@@ -405,7 +400,7 @@ func ParseRevokePowerOfAttorney(data []byte) *RevokePowerOfAttorney {
 	revoke.Attorney, position = util.ParseToken(data, position)
 	hashPosition := position
 	revoke.Signature, position = util.ParseSignature(data, position)
-	if position != len(data) {
+	if position > len(data) {
 		return nil
 	}
 	if !revoke.Author.Verify(data[0:hashPosition], revoke.Signature) {
@@ -490,7 +485,7 @@ func ParseVoid(data []byte) *Void {
 	void.Signer, position = util.ParseToken(data, position)
 	hashPosition := position
 	void.Signature, position = util.ParseSignature(data, position)
-	if position != len(data) {
+	if position > len(data) {
 		return nil
 	}
 	if !void.Signer.Verify(data[0:hashPosition], void.Signature) {
