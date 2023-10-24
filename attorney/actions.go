@@ -507,3 +507,16 @@ type KeyExchange struct {
 	Secret    []byte
 	Attorney  crypto.Token
 }
+
+// iisAxeNonVoid checks if a byte array has the header of an axé action different from
+// the void action. It does not try to parse the instruction, so there is no guarantee
+// that the byte array is a valid axé action.
+func IsAxeNonVoid(action []byte) bool {
+	if len(action) < 15 {
+		return false
+	}
+	if action[0] != 0 || action[1] != 0 || action[10] != 1 || action[11] != 0 || action[12] != 0 || action[13] != 0 || action[14] == 0 {
+		return false
+	}
+	return true
+}
