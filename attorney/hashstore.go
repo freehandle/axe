@@ -1,6 +1,7 @@
 package attorney
 
 import (
+	"log/slog"
 	"path/filepath"
 
 	"github.com/freehandle/breeze/crypto"
@@ -14,6 +15,12 @@ const (
 )
 
 func deleteOrInsert(found bool, hash crypto.Hash, b *papirus.Bucket, item int64, param []byte) papirus.OperationResult {
+	if len(param) < 1 {
+		slog.Error("deleteOrInsert called with zero param length")
+		return papirus.OperationResult{
+			Result: papirus.QueryResult{Ok: false},
+		}
+	}
 	if found {
 		if param[0] == remove { //Delete
 			return papirus.OperationResult{
@@ -82,6 +89,11 @@ func (w *hashVault) RemoveToken(token crypto.Token) bool {
 }
 
 func (w *hashVault) Close() bool {
+	defer func() {
+		if err := recover(); err != nil {
+			slog.Error("hashVault.Close", "msg", err)
+		}
+	}()
 	ok := make(chan bool)
 	w.hs.Stop <- ok
 	return <-ok
@@ -91,11 +103,25 @@ func NewHashVault(name string, epoch uint64, bitsForBucket int64, dataPath strin
 	nbytes := 56 + (32*6+8)*int64(1<<bitsForBucket)
 	var bytestore papirus.ByteStore
 	if dataPath == "" {
-		bytestore = papirus.NewMemoryStore(nbytes)
+		if store := papirus.NewMemoryStore(nbytes); store == nil {
+			slog.Error("NewHashVault: NewMemoryStore returned nil")
+			return nil
+		} else {
+			bytestore = store
+		}
 	} else {
-		bytestore = papirus.NewFileStore(filepath.Join(dataPath, name), nbytes)
+		if store := papirus.NewFileStore(filepath.Join(dataPath, name), nbytes); store == nil {
+			slog.Error("NewHashVault: NewFileStore returned nil")
+			return nil
+		} else {
+			bytestore = store
+		}
 	}
 	bucketstore := papirus.NewBucketStore(32, 6, bytestore)
+	if bucketstore == nil {
+		slog.Error("NewHashVault: NewBucketStore returned nil")
+		return nil
+	}
 	vault := &hashVault{
 		hs: papirus.NewHashStore(name, bucketstore, int(bitsForBucket), deleteOrInsert),
 	}
